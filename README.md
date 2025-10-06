@@ -8,6 +8,7 @@
   - [📚 Indholdsfortegnelse](#-indholdsfortegnelse)
   - [ℹ️ Beskrivelse](#ℹ️-beskrivelse)
     - [📋 Kravspecifikation](#-kravspecifikation)
+    - [🧩 UML Klassediagram](#-uml-klassediagram)
   - [🚥 Start](#-start)
   - [🔄 Version historie](#-version-historie)
   - [📝 Noter](#-noter)
@@ -38,6 +39,10 @@ Beskrivelse fra kunden, findes [her](./customer-description.md).
 **Evt. frameworks:** C# Console Application (.NET)<br>
 **Estimeret tid:** 1 uge<br>
 **Dato:** 06-10-2025
+
+### 🧩 UML Klassediagram
+
+**Link:** [🔗 Klassediagram](./uml-classdiagram.md)
 
 ## 🚥 Start
 
