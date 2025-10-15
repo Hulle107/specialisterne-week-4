@@ -2,66 +2,72 @@
 
 namespace PDFDownloader;
 
-internal class DownloadResult
-{
-    public byte[]? Data { get; set; }
-}
-
 internal class Downloader
 {
+    public static string DownloadDirectory { get; set; } = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "downloads");
 
-    public async Task<DownloadResult> Download(DownloadEntry entry, CancellationToken cancellationToken)
+    public static void Setup()
     {
-        if (entry.PrimaryUrl is not null)
-        {
-            entry.PrimaryDownloadStatus = DownloadStatus.Downloading;
-
-            var result = await DownloadFromURL(entry, cancellationToken);
-
-            if (result.Data is not null)
-            {
-                entry.PrimaryDownloadStatus = DownloadStatus.Completed;
-
-                return result;
-            }
-
-            entry.PrimaryDownloadStatus = DownloadStatus.Failed;
-        }
-
-        if (entry.AlternateUrl is not null)
-        {
-            entry.AlternateDownloadStatus = DownloadStatus.Downloading;
-
-            var result = await DownloadFromURL(entry, cancellationToken);
-
-            if (result.Data is not null)
-            {
-                entry.AlternateDownloadStatus = DownloadStatus.Completed;
-
-                return result;
-            }
-
-            entry.AlternateDownloadStatus = DownloadStatus.Failed;
-        }
-
-        return new();
+        if (!Directory.Exists(DownloadDirectory)) Directory.CreateDirectory(DownloadDirectory); // Create download directory if it doesn't exist
     }
 
-    private async Task<DownloadResult> DownloadFromURL(DownloadEntry entry, CancellationToken cancellationToken)
+    public static async Task DownloadFileAsync(Entry entry, CancellationToken cancellationToken)
     {
-        using HttpClient client = new();
+        // If there are no URLs, skip the entry
+        if (entry.Urls.Count == 0)
+        {
+            entry.DownloadState = DownloadState.Skipped;
+            return;
+        }
 
-        client.DefaultRequestHeaders.Accept.Clear();
-        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/pdf"));
+        string filename = $"{entry.Id}.pdf"; // Use entry ID as filename
+        string filePath = Path.Combine(DownloadDirectory, filename); // Full path to the file
 
-        var response = await client.GetAsync(entry.PrimaryUrl, cancellationToken);
+        // If the file already exists, mark as completed and return
+        if (File.Exists(filePath))
+        {
+            entry.UsedOutputFilePath = filePath;
+            entry.DownloadState = DownloadState.Completed;
+            return;
+        }
 
-        if (response.IsSuccessStatusCode && response.Content.Headers.ContentType?.MediaType == "application/pdf")
-            return new()
+        using HttpClient client = new(); // Create a new HttpClient instance
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/pdf")); // Set Accept header to application/pdf
+
+        entry.DownloadState = DownloadState.Downloading;
+
+        // Try each URL until one succeeds
+        foreach (var url in entry.Urls)
+        {
+            try
             {
-                Data = await response.Content.ReadAsByteArrayAsync(cancellationToken)
-            };
+                // Send GET request
+                var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                response.EnsureSuccessStatusCode(); // Throw if not a success code
 
-        return new();
+                // Save the response content to a file
+                using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken),
+                    fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+
+                await stream.CopyToAsync(fileStream, cancellationToken); // Copy the content to the file
+                await fileStream.FlushAsync(cancellationToken); // Ensure all data is written to the file
+
+                // Update entry details
+                entry.UsedUrl = url;
+                entry.UsedOutputFilePath = filePath;
+                entry.DownloadState = DownloadState.Completed;
+
+                return;
+            }
+            catch (Exception ex)
+            {
+                // Log the failure and try the next URL
+                await Logger.Log($"[{entry.Id}] Failed to download {entry.Id} from {url}: {ex.Message}");
+            }
+        }
+
+        // If all URLs failed, mark the entry as failed
+        await Logger.Log($"[{entry.Id}] All download attempts failed for {entry.Id}");
+        entry.DownloadState = DownloadState.Failed;
     }
 }
